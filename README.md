@@ -1,6 +1,7 @@
 # WebKit-UAF-ANGLE-OOB-Analysis (CVE-2025-43529, CVE-2025-14174)
 
 **Author:** [zeroxjf](https://x.com/zeroxjf)<br>
+**Based on:** [jir4vv1t's CVE-2025-43529 exploit](https://github.com/jir4vv1t/CVE-2025-43529)<br>
 **Status:** Work in Progress<br>
 **Test Device:** iPhone 11 Pro Max, iOS 26.1<br>
 **Last Updated:** January 2026
@@ -9,7 +10,7 @@
 
 ## Disclaimer
 
-This is an **ongoing research project**. The exploit achieves `addrof`/`fakeobj` primitives but full arbitrary read/write is blocked by arm64e PAC. This repo is my independent analysis of bugs discovered by Google TAG and Apple.
+This is an **ongoing research project**. The CVE-2025-43529 UAF trigger, butterfly reclaim, and `addrof`/`fakeobj` primitives are based on **[jir4vv1t's work](https://github.com/jir4vv1t/CVE-2025-43529)**. My contributions are the ANGLE OOB integration, PAC bypass research, and iOS 26.1 testing.
 
 ---
 
