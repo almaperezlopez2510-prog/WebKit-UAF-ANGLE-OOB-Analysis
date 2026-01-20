@@ -1,22 +1,25 @@
 # WebKit-UAF-ANGLE-OOB-Analysis (CVE-2025-43529, CVE-2025-14174)
 
+Notes and PoC material for a WebKit/ANGLE chain on iOS 26.1. This repo is not a full exploit; it tracks the pieces that are verified and the parts that are still failing.
+
 **Author:** [zeroxjf](https://x.com/zeroxjf)<br>
 **Based on:** [jir4vv1t's CVE-2025-43529 exploit](https://github.com/jir4vv1t/CVE-2025-43529)<br>
-**Status:** Work in Progress<br>
+**Status:** Work in progress<br>
 **Test Device:** iPhone 11 Pro Max, iOS 26.1<br>
 **Last Updated:** January 2026
 
 ---
 
-## Disclaimer
+## Scope and credit
 
-This is an **ongoing research project**. The CVE-2025-43529 UAF trigger, butterfly reclaim, and `addrof`/`fakeobj` primitives are based on **[jir4vv1t's work](https://github.com/jir4vv1t/CVE-2025-43529)**. My contributions are the ANGLE OOB integration, PAC bypass research, and iOS 26.1 testing.
+The CVE-2025-43529 UAF trigger, butterfly reclaim, and `addrof`/`fakeobj` primitives are based on **[jir4vv1t's work](https://github.com/jir4vv1t/CVE-2025-43529)**. My additions are the ANGLE OOB plumbing, PAC-focused analysis, and iOS 26.1 validation.
+AI assisted with probe analysis; findings were manually validated before publication.
 
 ---
 
 ## Overview
 
-Two WebKit CVEs disclosed together, exploited in the wild as part of an "extremely sophisticated attack against specific targeted individuals" (per Apple).
+Two WebKit CVEs disclosed together and reported as in-the-wild use by Apple.
 
 | CVE | Component | Type | Summary |
 |-----|-----------|------|---------|
@@ -29,9 +32,9 @@ Two WebKit CVEs disclosed together, exploited in the wild as part of an "extreme
 
 ### Root Cause
 
-The vulnerability exists in JavaScriptCore's DFG JIT compiler, specifically in the **Store Barrier Insertion Phase** (`DFGStoreBarrierInsertionPhase.cpp`).
+The bug is in JavaScriptCore's DFG JIT, specifically the **Store Barrier Insertion Phase** (`DFGStoreBarrierInsertionPhase.cpp`).
 
-The bug occurs when a **Phi node escapes** but its **Upsilon inputs are not marked as escaped**. This causes subsequent stores to those objects to lack write barriers, allowing the garbage collector to free objects that are still reachable.
+When a **Phi node escapes** but its **Upsilon inputs are not marked as escaped**, later stores miss a write barrier. That allows GC to free objects that are still reachable.
 
 ### Trigger Mechanism
 
@@ -63,7 +66,7 @@ function triggerUAF(flag, k, allocCount) {
 }
 ```
 
-### Exploitation
+### Exploitation sketch
 
 The freed Date's butterfly can be reclaimed by spray arrays, creating a type confusion:
 
@@ -76,18 +79,18 @@ unboxed_arr[0] = itof(addr);  // Write address as float64
 fake = boxed_arr[0];          // Read as object = fakeobj
 ```
 
-### Current Results (iPhone 11 Pro Max, iOS 26.1)
+### Current results (iPhone 11 Pro Max, iOS 26.1)
 
 - **addrof/fakeobj:** Verified in probe runs
 - **Address leaking:** 20+ object addresses captured per run
 - **Inline-storage read/write:** Verified against known inline slots (object-address-based)
-- **Arbitrary R/W:** Not proven; arb r/w proof via backing-store scan fails in current runs
+- **Arbitrary R/W:** Not proven; backing-store scan proof fails in current runs
 
 ---
 
 ## CVE-2025-14174: ANGLE Metal Backend OOB Write
 
-### Root Cause
+### Root cause
 
 In ANGLE's Metal backend (`TextureMtl.cpp`), staging buffer allocation uses `UNPACK_IMAGE_HEIGHT` instead of actual texture height when uploading via PBO.
 
@@ -106,9 +109,9 @@ gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT32F,
 
 ---
 
-## The PAC Problem
+## The PAC problem
 
-### What's Blocking Full Exploitation
+### What's blocking full exploitation
 
 On arm64e (iPhone 11 Pro Max), **Pointer Authentication Codes** protect critical JSC pointers:
 
@@ -117,7 +120,7 @@ On arm64e (iPhone 11 Pro Max), **Pointer Authentication Codes** protect critical
 | TypedArray `m_vector` | Yes | Cannot fake TypedArray with arbitrary backing store |
 | JSArray `butterfly` | Yes | Cannot fake JSArray with arbitrary butterfly |
 
-When I try to create a fake TypedArray/JSArray with an arbitrary data pointer, the CPU's PAC verification fails and crashes:
+When I try to create a fake TypedArray/JSArray with an arbitrary data pointer, PAC verification fails and crashes:
 
 ```
 Exception: EXC_BAD_ACCESS
@@ -125,11 +128,11 @@ KERN_INVALID_ADDRESS at 0x0001fffffffffffc -> 0x0000007ffffffffc
 (possible pointer authentication failure)
 ```
 
-### Why The Original Confusion Works
+### Why the original confusion works
 
 The type confusion succeeds because both arrays use **legitimately signed** butterfly pointers - we're just reinterpreting the same memory. Fake objects with arbitrary unsigned pointers crash on PAC check.
 
-### Potential Bypass Avenues
+### Potential bypass avenues
 
 1. JIT code paths that might skip authentication
 2. Gadgets that sign arbitrary pointers
@@ -138,7 +141,7 @@ The type confusion succeeds because both arrays use **legitimately signed** butt
 
 ---
 
-## Current Capabilities
+## Current capabilities
 
 | Primitive | Status | Notes |
 |-----------|--------|-------|
@@ -151,7 +154,7 @@ The type confusion succeeds because both arrays use **legitimately signed** butt
 
 ---
 
-## Evidence Summary (Latest Probe Run)
+## Evidence summary (latest probe run)
 
 - **Verified:** `addrof`, `fakeobj`, address leaks, inline-slot read/write on known objects
 - **Unverified:** arbitrary `read64`/`write64`, renderer→GPU escape chain, sandbox escape
@@ -159,7 +162,7 @@ The type confusion succeeds because both arrays use **legitimately signed** butt
 
 ---
 
-## Repository Structure
+## Repository structure
 
 ```
 ├── README.md                 # This file
@@ -180,7 +183,7 @@ The CVE-2025-43529 UAF trigger, butterfly reclaim technique, and `addrof`/`fakeo
 
 ## References
 
-- [jir4vv1t/CVE-2025-43529](https://github.com/jir4vv1t/CVE-2025-43529) - Original UAF exploit and technical analysis
+- [jir4vv1t/CVE-2025-43529](https://github.com/jir4vv1t/CVE-2025-43529) - Original UAF exploit and analysis
 - WebKit Bugzilla: 302502, 303614
 - Apple Security Updates - iOS 26
 - Google Threat Analysis Group
